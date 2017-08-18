@@ -12,6 +12,7 @@ int take_analog_depth_reading(){
     int distance = -9999;
     
     // Initialize and start ADC
+    ADC_SAR_1_Wakeup();
     ADC_SAR_1_Start();
     ADC_SAR_1_StartConvert();
     
@@ -29,7 +30,8 @@ int take_analog_depth_reading(){
     Ultrasonic_Sensor_Power_Write(0u);
     
     // Stop ADC conversion
-    ADC_SAR_1_Stop();
+    ADC_SAR_1_StartConvert();
+    ADC_SAR_1_Sleep();
     
     return distance;
 }

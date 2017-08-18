@@ -1,17 +1,18 @@
 # Generated code
-*.cydsn/CortexM3/
-*.cydsn/Export/
-*.cydsn/Generated_Source/
-*.cydsn/codegentemp/
-*.cydsn/Backup/
-*.cydsn/*.cycdx
-*.cydsn/*.cyfit
-*.cydsn/*.cyprj.*
-*.cydsn/*.rpt
-*.cydsn/*.svd
-*.cydsn/*_timing.html
-*.cydsn/*.log
-*.cywrk.*
+firmware/*.cydsn/CortexM3/
+firmware/*.cydsn/Export/
+firmware/*.cydsn/Generated_Source/
+firmware/*.cydsn/codegentemp/
+firmware/*.cydsn/Backup/
+firmware/*.cydsn/*.cycdx
+firmware/*.cydsn/*.cyfit
+firmware/*.cydsn/*.cyprj.*
+firmware/*.cydsn/*.rpt
+firmware/*.cydsn/*.svd
+firmware/*.cydsn/*_timing.html
+firmware/*.cydsn/*.log
+firmware/*.cywrk.*
+*.zip
 
 # Vim
 *.un~

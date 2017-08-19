@@ -1,9 +1,11 @@
-#include <project.h>
+#include <device.h>
 #include <stdlib.h>
 #include "analog.h"
 
+// The voltage range will typically be 5 V.
 #define MAXBOTIX_V_RANGE 4.75
-#define MAXBOTIX_RESOLUTION 5120
+// The resolution will depend on the sensor model: 5120 for MB7384 and 10240 for MB7383
+#define MAXBOTIX_RESOLUTION 10240
 
 int take_analog_depth_reading(){
     // Initialize variables
@@ -30,7 +32,7 @@ int take_analog_depth_reading(){
     Ultrasonic_Sensor_Power_Write(0u);
     
     // Stop ADC conversion
-    ADC_SAR_1_StartConvert();
+    ADC_SAR_1_StopConvert();
     ADC_SAR_1_Sleep();
     
     return distance;

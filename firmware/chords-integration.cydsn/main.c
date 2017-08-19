@@ -83,9 +83,10 @@ int main(void)
                 // Shut down modem
                 modem_shutdown();
             
-                // Take device to go to sleep
-                awake = 0u;
             }
+            
+            // Tell device to go to sleep
+            awake = 0u;
         }
         
         else {    

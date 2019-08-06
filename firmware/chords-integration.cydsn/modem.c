@@ -15,12 +15,14 @@
 
 // declare variables
 int	   iter = 0;
+int    max_conn_attempts = MAX_CONNECTION_ATTEMPTS;
 uint8  modem_state, lock_acquired = 0u, ready = 0u;
 uint16 uart_string_index = 0u;
+uint32 feed_id;
 char   modem_received_buffer[MODEM_BUFFER_LENGTH] = {'\0'};
+char   modem_time[25u] = {'\0'};
 char   request_chunk[CHUNK_SIZE] = {'\0'};
-char*  modem_apn = "epc.tmobile.com";
-int max_conn_attempts = 5;
+char   modem_apn[50] = "wireless.twilio.com";
 
 // prototype modem interrupt
 CY_ISR_PROTO(Telit_isr_rx);
@@ -36,10 +38,6 @@ uint8	modem_startup(int *conn_attempts) {
 	iter = 0, ready = 0u;
 
 	// Modem is already connected to network
-        if( modem_state == MODEM_STATE_READY) {
-            return 1u;
-        }
-	
 	modem_start();
 	
 	while( iter < max_conn_attempts ) {
@@ -48,7 +46,7 @@ uint8	modem_startup(int *conn_attempts) {
 
 		/* Set up the modem */
 		ready = modem_power_on();
-		modem_set_flow_control(0u);	
+		
 		modem_setup();
 		
 		if ( ready == 1u ) {
@@ -75,9 +73,18 @@ uint8	modem_startup(int *conn_attempts) {
 // and power down the modem
 uint8 	modem_shutdown() {
 	if (modem_power_off()){
+        Telit_PWR_Write(0u);
+        Telit_ControlReg_Write(0u);    
+        Telit_RST_Write(0u); // Make sure the RESET "button" is not pressed
+    
+        modem_state = MODEM_STATE_OFF;
 		return 1u;	
 	}
-	
+	Telit_PWR_Write(0u);
+    Telit_ControlReg_Write(0u);    
+    Telit_RST_Write(0u); // Make sure the RESET "button" is not pressed
+    
+    modem_state = MODEM_STATE_OFF;    
 	return 0u;
 }
 
@@ -85,8 +92,9 @@ uint8 	modem_shutdown() {
 void modem_start(){
     Telit_UART_Start();
     Telit_ControlReg_Write(0u);
-	Telit_ON_Write(1u);			// Prep modem for "push button"
-	Telit_RST_Write(1u);		// Prep modem for "push button"
+    Telit_PWR_Write(1u);
+	Telit_ON_Write(0u);			// Prep modem for "push button"
+	Telit_RST_Write(0u);		// Prep modem for "push button"
     Telit_isr_rx_StartEx(Telit_isr_rx);
     modem_state = MODEM_STATE_OFF;
 }
@@ -97,8 +105,58 @@ void modem_stop(){
     Telit_ControlReg_Write(0u);
 	Telit_ON_Write(0u);			// Save energy by pulling down "push button"
 	Telit_RST_Write(0u);		// Save energy by pulling down "push button"
+    //Telit_PWR_Write(0u);
     Telit_isr_rx_Stop();
     modem_state = MODEM_STATE_OFF;
+}
+
+uint8 modem_updates_toggle(uint8 updates_enabled){
+    char cmd[20];
+    char updates_state[5] = {'\0'};
+
+    // Send AT read command to determine if updates are already enabled
+    if (at_write_command("AT#OMADMCEN?\r", "OK", 1000u)) {
+        // Extract current updates state into updates_state
+        strextract(modem_received_buffer, updates_state, "OMADMCEN: 1,", "\r\n");
+
+        // If current state matches desired state, do nothing
+        if (atoi(updates_state) != updates_enabled) {
+            // Construct AT command
+            sprintf(cmd, "AT#OMADMCEN=%u\r", updates_enabled);
+
+            // Enable/disable updates
+            return at_write_command(cmd, "OK", 5000u);
+        } else {
+            return 1u;
+        }
+    }
+
+    return 0u;
+}
+
+uint8 modem_get_time(char *time)
+{
+    /*
+    uint8 modem_get_time(char *time)
+
+    Return the CCID of the cell module
+
+    Example HE910/NL-SW-HSPA Conversation:
+    [Board] AT#CCLK
+    [Modem] AT#CCLK?\r\r\n#CCLK: "00/01/01,00:00:55+00"\r\n\r\nOK
+    */
+
+    // Check for valid response from cellular module
+    if (at_write_command("AT+CCLK?\r", "OK", 1000u) == 1u) {
+        // Expect the UART to contain something like
+        // "#CCLK: "00/01/01,00:00:55+00"\r\n\r\nOK"
+        char *terminator =
+            strextract(modem_received_buffer, time, "+CCLK: ", "\r\n");
+
+        return terminator != NULL;
+    }
+
+    return 0u;
 }
 
 // send at-command to modem
@@ -124,11 +182,13 @@ uint8 at_write_command(char* uart_string, char* expected_response, uint32 uart_t
 }
 
 uint8 modem_power_on(){
+    
+    Telit_PWR_Write(1u);
 
-    if (modem_state != MODEM_STATE_OFF) {
+    if(at_write_command("AT\r","OK",1000u) == 1){
         // Modem is already on
         return 1u;
-    }
+    }    
     
     // Set ON, PWR pins low
     Telit_ON_Write(0u); 
@@ -139,9 +199,6 @@ uint8 modem_power_on(){
     
     // "Push" the ON button for 2 seconds
     Telit_ON_Write(1u); 
-    CyDelay(2000u);     // the pad ON# must be tied low for at least 1 second and then released.
-    //CyDelay(1500u);     // At least 3 seconds if VBAT < 3.4 for GC 864
-    Telit_ON_Write(0u); 
     
     CyDelay(5000u);  
     /* NOTE:
@@ -160,7 +217,7 @@ uint8 modem_power_on(){
 
 uint8 modem_power_off(){
 	
-    if (modem_state == MODEM_STATE_OFF) {
+    if(at_write_command("AT\r","OK",1000u) != 1){
         // Modem is already off
         return 1u;
     }
@@ -170,7 +227,12 @@ uint8 modem_power_off(){
     modem_disconnect();
     
 
-    if(at_write_command("AT#SHDN","OK",1000u) != 1){  
+    if(at_write_command("AT#SHDN","OK",1000u) == 1){
+        // Once we get the OK, immediately pull down the Power pin
+        // to prevent turning the Nimbelink module back on
+        Telit_ON_Write(0u);
+    }
+    else {
         // If the command fails, issue a hard reset  
         // "Push" the ON button for 
         Telit_ON_Write(1u);
@@ -186,6 +248,7 @@ uint8 modem_power_off(){
         
     
     // Book keeping
+    Telit_PWR_Write(0u);
     Telit_ControlReg_Write(0u);    
     Telit_RST_Write(0u); // Make sure the RESET "button" is not pressed
     
@@ -209,12 +272,33 @@ uint8 modem_reset(){
 
 uint8 modem_setup() {
 /* Initialize configurations for the modem */
-	// Set Error Reports to verbose mode
-	if (modem_set_error_reports(2u) != 1u) {
-		return 0u;
-	}
+    uint8 status = 0u;
 	
-	return 1u;
+    // Get Latest Time from Modem
+    if (modem_get_time(modem_time)) {
+        status += 16u;
+    }
+    
+    // Set APN
+    if (modem_set_apn()) {
+        status += 1u;
+    }
+    
+    // Set modem functionality to full functionality
+	if (modem_set_fun(1u)) {
+		status += 2u;
+	}
+    
+    // Set flow control to 0; bypass requirement for CTS, RTS between microprocessor and  module
+    if ( modem_set_flow_control(0u) ) {
+        status += 4u;   
+    }
+    
+	// Set Error Reports to verbose mode
+	if (modem_set_error_reports(2u)) {
+		status += 8u;
+	}
+	return status;
 }
 
 uint8 modem_connect(){
@@ -256,15 +340,10 @@ uint8 modem_connect(){
 uint8 modem_disconnect(){
 /* Close modem connection to network */
 	
-    // Proceed if modem is not connected to network.  Otherwise, try to disconnect from the network and proceed.
-    if(modem_state != MODEM_STATE_READY) {
-        /* Can use this statement instead for GSM (ATT, TMobile)
-		return (at_write_command("AT#GPRS=0\r","OK",5000u) == 1u);
-		*/
-		return (modem_pdp_context_toggle(0u));
-			
-    }
-    return 0u; // failed to disconnect
+    // Override the check below for modem_state and attempt to close the pdp context
+    // modem_pdp_context_toggle(0u) already checks if the PDP context is in the correct state
+    return (modem_pdp_context_toggle(0u));
+    
 }
 
 uint8 modem_check_network() {
@@ -296,11 +375,13 @@ uint8 modem_get_meid(char *meid) {
     */
 
     // Check for valid response from cellular module
-    if (at_write_command("AT#MEID?\r", "OK", 1000u) == 1u) {
+    if (at_write_command("AT+CCID?\r", "OK", 1000u) == 1u) { // Read SIM like for Nimbelink NL-SW-HSPA
+    //if (at_write_command("AT#MEID?\r", "OK", 1000u) == 1u) {
         // Expect the UART to contain something like
         // "\r\n#MEID: A10000,32B9F1C0\r\n\r\nOK"
         char *terminator =
-            strextract(modem_received_buffer, meid, "#MEID: ", "\r\n");
+            strextract(modem_received_buffer, meid, "+CCID: ", "\r\n"); // Read SIM like for Nimbelink NL-SW-HSPA
+            //strextract(modem_received_buffer, meid, "#MEID: ", "\r\n");
 
         // In the case for modules like CC864-DUAL where "," is in the middle of
         // the MEID, remove the comma
@@ -367,6 +448,28 @@ int modem_get_socket_status() {
     return -1;
 }
 
+uint8 modem_set_apn(){
+    char cmd[100];
+    sprintf(cmd,"AT+CGDCONT=1,\"IP\",\"%s\"\r",modem_apn);
+    
+    if(at_write_command(cmd,"OK",1000u) == 1u){
+        return 1u;
+    }
+    
+    return 0u;
+    
+}
+
+uint8 modem_set_fun(uint8 param){
+    char cmd[100];
+    sprintf(cmd,"AT+CFUN=%u\r",param);
+    if(at_write_command(cmd,"OK",1000u) == 1u){      
+        return 1u;
+    }
+
+    return 0u;  
+}
+
 uint8 modem_set_flow_control(uint8 param){
     char cmd[100];
     sprintf(cmd,"AT&K%u\r",param);
@@ -388,7 +491,7 @@ uint8 modem_set_error_reports(uint8 param){
 }
 
 uint8 modem_pdp_context_toggle(uint8 activate_pdp) {
-    char cmd[20];
+    char cmd[20] = {'\0'};
     char pdp_state[5] = {'\0'};
 
     // Send AT read command to determine if context is already enabled
@@ -467,6 +570,11 @@ void construct_generic_request(char* send_str, char* body, char* host, char* rou
             "\r\n\r\n", body); // 13 14 15
 	}
 	sprintf(send_str, "%s%s", send_str, "\r\n"); 
+    
+    //char tmp_buffer[4000];
+    //sprintf(tmp_buffer, "%s", send_str);
+    
+    return;
 }
 
 int send_chunked_request(char* send_str, char *chunk, int chunk_len, char *send_cmd, char *ring_cmd, char *term_char){
@@ -765,4 +873,5 @@ CY_ISR(Telit_isr_rx){
     }
 }
 
-/* [] END OF FILE */
+///* [] END OF FILE */
+//

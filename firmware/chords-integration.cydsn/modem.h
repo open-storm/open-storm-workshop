@@ -13,9 +13,10 @@
 #define MODEM_STATE_IDLE        1
 #define MODEM_STATE_READY       3
 #define MAX_GET_ATTEMPTS        2
-#define MAX_SEND_ATTEMPTS       1//2
-#define MAX_SEND_LENGTH         2000
-#define MAX_RECV_LENGTH         2000
+#define MAX_SEND_ATTEMPTS       1
+#define MAX_CONNECTION_ATTEMPTS 2
+#define MAX_SEND_LENGTH         5000
+#define MAX_RECV_LENGTH         5000
 #define CHUNK_SIZE              800
 #define CHUNK_STRING_LENGTH     10
 
@@ -24,6 +25,17 @@ extern uint8	lock_acquired;
 extern uint32	feed_id;
 extern char*	api_key;
 
+/**
+ * @brief Enable/disable Sprint updates. Execution command is used to enable or disable updates.
+ *
+ * @param updates_enabled enable flag:
+ * - 0 = disable updates
+ * - 1 = enable updates
+ *
+ * @return 1u on successful toggle, 0u otherwise
+ */
+uint8 modem_updates_toggle(uint8 updates_enabled);
+    
 /**
  * @brief Startup sequence to power on the modem, start modem components and
  * prepare for sending/receiving messages over the network.
@@ -117,6 +129,27 @@ uint8 modem_get_meid(char* meid);
  * @return 1u on success, 0u otherwise.
  */
 uint8 modem_check_signal_quality(int *rssi, int *fer);
+
+/**
+ * @brief Set Access Point Name (APN)
+ *
+ * @return 1u on success, 0u otherwise.
+ */
+uint8 modem_set_apn();
+
+/**
+ * @brief Set Functionality. 
+ *
+ * @param param One of the following ints:
+ * - 0 minimum functionality
+ * - 1 full functionality
+ * - 2 disable phone transmit RF circuits only
+ * - 3 disable phone receive RF circuits only
+ * - 4 disable phone both transmit and receive RF circuits
+ *
+ * @return 1u on success, 0u otherwise.
+ */
+uint8 modem_set_fun(uint8 param);
 
 /**
  * @brief Set Flow Control. Set command controls the RS232 flow control behaviour.
